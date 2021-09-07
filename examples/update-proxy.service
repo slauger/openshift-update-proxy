@@ -1,0 +1,13 @@
+[Unit]
+Description=OpenShift Update Proxy
+After=network.target
+
+[Service]
+#User=username
+Environment=HTTPS_PROXY=http://localhost:3128
+WorkingDirectory=/opt/update-proxy
+ExecStart=/opt/update-proxy/proxy.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
