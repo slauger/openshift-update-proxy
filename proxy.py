@@ -9,6 +9,11 @@ app = Flask(__name__)
 logger = logging.getLogger('update-proxy')
 logger.setLevel(logging.INFO)
 
+if not os.environ.get('IGNORE_SSL', False):
+  ssl_verify = False
+else:
+  ssl_verify = True
+
 @app.route('/', defaults={'path': ''})
 @app.route('/api/<path:path>')
 def api_proxy(path):
@@ -24,6 +29,7 @@ def api_proxy(path):
     proxies={
       'https': os.environ.get('HTTPS_PROXY', 'http://localhost:3128'),
     },
+    verify = ssl_verify,
   )
 
   return response.text
@@ -38,6 +44,7 @@ def mirror_proxy(path):
     proxies={
       'https': os.environ.get('HTTPS_PROXY', 'http://localhost:3128'),
     },
+    verify = ssl_verify,
   )
 
   return response.text
