@@ -10,17 +10,31 @@ logger = logging.getLogger('update-proxy')
 logger.setLevel(logging.INFO)
 
 @app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
+@app.route('/api/<path:path>')
 def api_proxy(path):
   channel = request.args.get('channel')
   arch = request.args.get('arch')
 
-  url = "https://api.openshift.com/" + path
+  url = "https://api.openshift.com/api/" + path
 
   logger.info("forwarding update api call from source {} to upstream {}".format(request.remote_addr, url))
 
   response = requests.get(url,
     params={'channel': channel, 'arch': arch},
+    proxies={
+      'https': os.environ.get('HTTPS_PROXY', 'http://localhost:3128'),
+    },
+  )
+
+  return response.text
+
+@app.route('/pub/<path:path>')
+def mirror_proxy(path):
+  url = "https://mirror.openshift.com/pub/" + path
+
+  logger.info("forwarding update api call from source {} to upstream {}".format(request.remote_addr, url))
+
+  response = requests.get(url,
     proxies={
       'https': os.environ.get('HTTPS_PROXY', 'http://localhost:3128'),
     },
