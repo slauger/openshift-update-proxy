@@ -22,7 +22,7 @@ def api_proxy(path):
 
   url = "https://api.openshift.com/api/" + path
 
-  logger.info("forwarding update api call from source {} to upstream {}".format(request.remote_addr, url))
+  logger.info("forwarding api request from source {} to upstream {}".format(request.remote_addr, url))
 
   response = requests.get(url,
     params={'channel': channel, 'arch': arch},
@@ -38,7 +38,7 @@ def api_proxy(path):
 def mirror_proxy(path):
   url = "https://mirror.openshift.com/pub/" + path
 
-  logger.info("forwarding update api call from source {} to upstream {}".format(request.remote_addr, url))
+  logger.info("forwarding mirror request from source {} to upstream {}".format(request.remote_addr, url))
 
   response = requests.get(url,
     proxies={
@@ -47,9 +47,8 @@ def mirror_proxy(path):
     verify = ssl_verify,
   )
 
-  return response.text
+  return response.content
 
 if __name__ == '__main__':
   from waitress import serve
   serve(app, host="0.0.0.0", port=5000)
-  #app.run(host='0.0.0.0', port=5000)
