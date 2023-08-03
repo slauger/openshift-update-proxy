@@ -1,0 +1,7 @@
+---
+schemaVersion: "2.0.0"
+
+commandTests:
+  - name: "python3 works"
+    command: "python3"
+    args: ["--version"]
