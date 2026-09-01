@@ -99,7 +99,9 @@ jobs:
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-latest
-    needs: release
+    # runs last so a broken chart/container/testpypi publish never results
+    # in a half-released version on the real pypi.org
+    needs: [release, publish-testpypi, publish-chart, container]
     if: needs.release.outputs.released == 'true'
     permissions:
       id-token: write
