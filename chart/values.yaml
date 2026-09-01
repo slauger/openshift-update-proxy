@@ -6,8 +6,9 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/slauger/openshift-update-proxy
-  pullPolicy: Always
-  tag: "latest"
+  pullPolicy: IfNotPresent
+  # Defaults to the chart appVersion, which is stamped at release time
+  tag: ""
 
 imagePullSecrets: []
 nameOverride: ""

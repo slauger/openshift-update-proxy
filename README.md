@@ -91,10 +91,14 @@ and is built from the `Containerfile` in this repository.
 
 ### Helm
 
+The chart is published as an OCI artifact to ghcr.io on every release:
+
 ```bash
-helm install update-proxy ./chart \
+helm install update-proxy oci://ghcr.io/slauger/charts/openshift-update-proxy \
   --set env[0].name=HTTPS_PROXY,env[0].value=http://proxy.example.com:3128
 ```
+
+Or from a git checkout: `helm install update-proxy ./chart`
 
 ### PyPI
 

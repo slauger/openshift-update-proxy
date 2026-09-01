@@ -129,6 +129,35 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
+  publish-chart:
+    name: Publish Helm Chart
+    runs-on: ubuntu-latest
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - name: Login to Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Package chart
+        run: helm package chart/ --version ${{ needs.release.outputs.version }} --app-version v${{ needs.release.outputs.version }}
+
+      - name: Push chart
+        run: helm push openshift-update-proxy-${{ needs.release.outputs.version }}.tgz oci://ghcr.io/slauger/charts
+
+      - uses: oras-project/setup-oras@v1
+
+      - name: Tag chart as latest
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
+          oras tag ghcr.io/slauger/charts/openshift-update-proxy:${{ needs.release.outputs.version }} latest
+
   container:
     name: Build, Push and Sign Container Image
     runs-on: ubuntu-latest
