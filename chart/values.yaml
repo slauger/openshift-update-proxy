@@ -45,7 +45,7 @@ env: []
 
 service:
   type: ClusterIP
-  port: 5050
+  port: 5000
 
 ingress:
   enabled: false

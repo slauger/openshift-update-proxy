@@ -120,7 +120,7 @@ kind: ClusterVersion
 metadata:
   name: version
 spec:
-  upstream: http://update-proxy.example.com:5050/api/upgrades_info/v1/graph
+  upstream: http://update-proxy.example.com:5000/api/upgrades_info/v1/graph
 ```
 
 ### Release signatures
@@ -139,7 +139,7 @@ metadata:
   name: version
 spec:
   signatureStores:
-    - url: http://update-proxy.example.com:5050/signatures
+    - url: http://update-proxy.example.com:5000/signatures
 ```
 
 **Option 2: Signature ConfigMap**
@@ -149,7 +149,7 @@ ready-to-apply ConfigMap (same format as `oc adm release mirror` / oc-mirror pro
 
 ```bash
 DIGEST=$(oc adm release info quay.io/openshift-release-dev/ocp-release:4.16.8-x86_64 -o jsonpath='{.digest}')
-curl -s "http://update-proxy.example.com:5050/configmaps/${DIGEST/:/=}" | oc apply -f -
+curl -s "http://update-proxy.example.com:5000/configmaps/${DIGEST/:/=}" | oc apply -f -
 ```
 
 The ConfigMap is created in `openshift-config-managed` with the
