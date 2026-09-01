@@ -6,7 +6,8 @@ After=network.target
 #User=username
 Environment=HTTPS_PROXY=http://localhost:3128
 WorkingDirectory=/opt/update-proxy
-ExecStart=/opt/update-proxy/proxy.py
+# pip install openshift-update-proxy into /opt/update-proxy/.venv first
+ExecStart=/opt/update-proxy/.venv/bin/openshift-update-proxy
 Restart=always
 
 [Install]

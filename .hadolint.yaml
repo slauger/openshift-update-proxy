@@ -1,0 +1,3 @@
+ignored:
+  - DL3041  # pin versions in dnf install (not practical, base image is digest-pinned)
+  - DL3013  # pin versions in pip install (we install the locally built wheel via --no-index)

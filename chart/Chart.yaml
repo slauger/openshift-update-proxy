@@ -1,0 +1,10 @@
+apiVersion: v2
+name: openshift-update-proxy
+description: Forwarding proxy for OpenShift update resources (Cincinnati API, mirror, release signatures)
+type: application
+
+# Chart version, incremented on every chart change (SemVer)
+version: 1.0.0
+
+# Version of the deployed application (container image tag)
+appVersion: "latest"

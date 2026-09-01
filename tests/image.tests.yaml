@@ -5,3 +5,15 @@ commandTests:
   - name: "python3 works"
     command: "python3"
     args: ["--version"]
+
+  - name: "package is installed"
+    command: "python3"
+    args: ["-c", "import openshift_update_proxy"]
+
+  - name: "entrypoint exists"
+    command: "which"
+    args: ["openshift-update-proxy"]
+
+metadataTest:
+  exposedPorts: ["5000"]
+  user: "1001:0"

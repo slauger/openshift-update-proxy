@@ -1,15 +1,31 @@
-IMAGE_NAME=quay.io/slauger/openshift-update-proxy
+IMAGE_NAME=ghcr.io/slauger/openshift-update-proxy
+IMAGE_TAG?=latest
+CONTAINER_ENGINE?=docker
 
-HTTP_PROXY?=http://localhost:3128
+HTTPS_PROXY?=
 
-build:
-	docker build -t $(IMAGE_NAME) .
+.PHONY: venv test lint build run push test-image
+
+venv:
+	python3 -m venv .venv
+	.venv/bin/pip install -e ".[dev]"
 
 test:
-	docker run -v /var/run/docker.sock:/var/run/docker.sock -v $(shell pwd):/src:ro gcr.io/gcp-runtimes/container-structure-test:latest test --image $(CONTAINER_NAME):$(CONTAINER_TAG) --config /src/tests/image.tests.yaml
+	.venv/bin/pytest --cov=src --cov-report=term-missing
+
+lint:
+	.venv/bin/ruff check src/ tests/
+	.venv/bin/black --check src/ tests/
+	.venv/bin/mypy src/
+
+build:
+	$(CONTAINER_ENGINE) build -f Containerfile -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
 run:
-	docker run -p 5050:5050 -e HTTP_PROXY=$(HTTP_PROXY) -it $(IMAGE_NAME)
+	$(CONTAINER_ENGINE) run --rm -p 5000:5000 -e HTTPS_PROXY=$(HTTPS_PROXY) -it $(IMAGE_NAME):$(IMAGE_TAG)
 
 push:
-	docker push $(IMAGE_NAME)
+	$(CONTAINER_ENGINE) push $(IMAGE_NAME):$(IMAGE_TAG)
+
+test-image:
+	$(CONTAINER_ENGINE) run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(shell pwd):/src:ro gcr.io/gcp-runtimes/container-structure-test:latest test --image $(IMAGE_NAME):$(IMAGE_TAG) --config /src/tests/image.tests.yaml
