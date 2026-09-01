@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openshift-update-proxy"
-version = "1.0.0"
+version = "0.0.0"
 description = "Forwarding proxy for OpenShift update resources (Cincinnati API, mirror, release signatures)"
 readme = "README.md"
 license = "Apache-2.0"
@@ -87,6 +87,7 @@ version_variables = [
 branch = "master"
 build_command = "pip install build && python -m build"
 commit_parser = "angular"
+allow_zero_version = false
 
 [tool.semantic_release.commit_parser_options]
 allowed_tags = ["feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore", "revert"]
