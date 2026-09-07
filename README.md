@@ -126,9 +126,7 @@ spec:
 ### Release signatures
 
 For updates by digest (`oc adm upgrade --to-image ...@sha256:...`) the CVO must verify the
-release image signature. There are two ways to get signatures into a restricted cluster:
-
-**Option 1: Signature ConfigMap (recommended)**
+release image signature.
 
 The `/configmaps/` endpoint fetches all signatures for a release digest and renders a
 ready-to-apply ConfigMap (same format as `oc adm release mirror` / oc-mirror produces):
@@ -141,26 +139,10 @@ curl -s "http://update-proxy.example.com:5000/configmaps/${DIGEST/:/=}" | oc app
 The ConfigMap is created in `openshift-config-managed` with the
 `release.openshift.io/verification-signatures` label, where the CVO picks it up.
 
-**Option 2: Signature store (TechPreview only)**
-
-The ClusterVersion API also has a `spec.signatureStores` field that can point the CVO
-directly at the `/signatures/` endpoint of the proxy:
-
-```yaml
-apiVersion: config.openshift.io/v1
-kind: ClusterVersion
-metadata:
-  name: version
-spec:
-  signatureStores:
-    - url: http://update-proxy.example.com:5000/signatures
-```
-
-However, this field is gated behind the `SignatureStores` feature gate, which is only
-available in the `TechPreviewNoUpgrade` feature set — enabling it is irreversible and
-blocks minor version updates. Red Hat has decided not to promote the feature to GA
-([OTA-1118](https://issues.redhat.com/browse/OTA-1118)); it is superseded by
-Sigstore-based release verification. Do not use this on production clusters.
+> **Note:** The ClusterVersion API also has a `spec.signatureStores` field, but it is
+> gated behind the TechPreview-only `SignatureStores` feature gate and will not be
+> promoted to GA ([OTA-1118](https://issues.redhat.com/browse/OTA-1118)). The ConfigMap
+> above is the supported way to provide signatures.
 
 ## Local Development
 
