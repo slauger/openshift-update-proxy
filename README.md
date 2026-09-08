@@ -247,10 +247,9 @@ The optional `channel_prefix` (default `stable`, e.g. `eus`, `fast`, `candidate`
 lifecycle API is available under `/lifecycle/`, e.g.
 `/lifecycle/products?name=OpenShift Container Platform`.
 
-Together with the `/configmaps/` endpoint this replaces homegrown signature sync
-scripts: [examples/create-configmaps.sh](examples/create-configmaps.sh) fetches all
-release signatures for a set of channels through the proxy and applies them as
-ConfigMaps.
+[examples/create-configmaps.sh](examples/create-configmaps.sh) combines this with
+the `/configmaps/` endpoint: it fetches the release signatures for a set of update
+channels through the proxy and applies them as ConfigMaps.
 
 ## Local Development
 

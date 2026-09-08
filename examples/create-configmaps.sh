@@ -10,8 +10,10 @@
 #   UPDATE_PROXY_URL  Base URL of the openshift-update-proxy
 #                     (default: http://openshift-update-proxy:5000, the
 #                     in-cluster service name from the Helm chart)
-#   CHANNELS          Space-separated list of update channels
-#                     (default: stable-4.20 .. stable-4.25)
+#   CHANNELS          Space-separated list of update channels (default: all
+#                     currently supported versions, discovered via the
+#                     /versions/v1/supported endpoint)
+#   CHANNEL_PREFIX    Channel prefix for the discovery (default: stable)
 #   ARCHITECTURES     Space-separated list of architectures (default: amd64)
 #   OUTPUT_FILE       Bundle file to write (default: bundle.yaml)
 #   APPLY             Apply the bundle with oc (default: true)
@@ -20,15 +22,25 @@
 #
 #   UPDATE_PROXY_URL=http://update-proxy.internal:5000 ./create-configmaps.sh
 #   CHANNELS="stable-4.20 eus-4.20" APPLY=false ./create-configmaps.sh
+#   CHANNEL_PREFIX=eus ./create-configmaps.sh
 
 set -euo pipefail
 
 UPDATE_PROXY_URL="${UPDATE_PROXY_URL:-http://openshift-update-proxy:5000}"
 UPDATE_PROXY_URL="${UPDATE_PROXY_URL%/}"
-CHANNELS="${CHANNELS:-$(echo stable-4.{20..25})}"
+CHANNEL_PREFIX="${CHANNEL_PREFIX:-stable}"
 ARCHITECTURES="${ARCHITECTURES:-amd64}"
 OUTPUT_FILE="${OUTPUT_FILE:-bundle.yaml}"
 APPLY="${APPLY:-true}"
+
+if [ -z "${CHANNELS:-}" ]; then
+  if ! CHANNELS=$(curl -Lsf "${UPDATE_PROXY_URL}/versions/v1/supported?channel_prefix=${CHANNEL_PREFIX}" \
+    | jq -r '[.versions[] | select(.latest_release != null) | .channel] | join(" ")'); then
+    echo "error: failed to discover supported channels from ${UPDATE_PROXY_URL}" >&2
+    exit 1
+  fi
+  echo "discovered supported channels: ${CHANNELS}"
+fi
 
 fetch_digests() {
   local channel arch graph
