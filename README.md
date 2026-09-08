@@ -158,7 +158,9 @@ curl -s "http://update-proxy.example.com:5000/configmaps/4.16.8" | oc apply -f -
 
 The optional `arch` (default `amd64`) and `channel_prefix` (default `stable`) query
 parameters select the architecture and the update channel used for the lookup, e.g.
-`/configmaps/4.16.8?arch=arm64`.
+`/configmaps/4.16.8?arch=arm64`. Version lookups name the ConfigMap
+`release-image-<version>`; digest lookups use `signature-sha256-<digest>` as the
+version is not known there.
 
 Alternatively, a release digest can be passed directly:
 
