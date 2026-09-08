@@ -168,7 +168,9 @@ def test_configmap_by_version_resolves_digest(client, monkeypatch):
     assert response.status_code == 200
     assert graph_calls["params"]["channel"] == "stable-4.16"
     assert graph_calls["params"]["arch"] == "arm64"
-    assert f"sha256-{DIGEST}-1:" in response.data.decode()
+    body = response.data.decode()
+    assert "name: release-image-4.16.8" in body
+    assert f"sha256-{DIGEST}-1:" in body
 
 
 def test_configmap_by_version_returns_404_for_unknown_version(client, monkeypatch):
@@ -201,6 +203,44 @@ def test_configmap_by_version_rejects_invalid_arch(client):
     response = client.get("/configmaps/4.16.8?arch=amd64;x==y")
 
     assert response.status_code == 400
+
+
+def test_requests_are_logged(client, caplog, monkeypatch):
+    monkeypatch.setattr(app_module.requests, "get", lambda *a, **kw: FakeResponse(b"{}"))
+
+    with caplog.at_level("INFO", logger="openshift-update-proxy"):
+        client.get("/api/upgrades_info/v1/graph?channel=stable-4.16")
+
+    assert any(
+        '"GET /api/upgrades_info/v1/graph?channel=stable-4.16" 200' in record.message
+        for record in caplog.records
+    )
+
+
+def test_healthz_is_not_logged(client, caplog):
+    with caplog.at_level("INFO", logger="openshift-update-proxy"):
+        client.get("/healthz")
+
+    assert not caplog.records
+
+
+def test_insecure_warnings_disabled_when_verify_off(monkeypatch):
+    from openshift_update_proxy.app import create_app
+    from openshift_update_proxy.config import Config
+
+    calls = []
+    monkeypatch.setattr(
+        app_module.urllib3, "disable_warnings", lambda category: calls.append(category)
+    )
+
+    monkeypatch.setenv("INSECURE_SKIP_TLS_VERIFY", "true")
+    create_app(Config())
+    assert calls == [app_module.urllib3.exceptions.InsecureRequestWarning]
+
+    calls.clear()
+    monkeypatch.delenv("INSECURE_SKIP_TLS_VERIFY")
+    create_app(Config())
+    assert calls == []
 
 
 def test_ssl_verify_enabled_by_default(config):

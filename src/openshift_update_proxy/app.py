@@ -5,6 +5,7 @@ import logging
 import re
 
 import requests
+import urllib3
 from flask import Flask, Response, jsonify, request
 
 from openshift_update_proxy import __version__, catalog, graph, lifecycle
@@ -34,7 +35,7 @@ VERSION_PATTERN = re.compile(r"^(?P<major>\d+)\.(?P<minor>\d+)\.\d+[A-Za-z0-9.+-
 CONFIGMAP_TEMPLATE = """apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: signature-sha256-{short_digest}
+  name: {name}
   namespace: openshift-config-managed
   labels:
     release.openshift.io/verification-signatures: ""
@@ -45,6 +46,23 @@ binaryData:
 def create_app(config: Config | None = None) -> Flask:
     app = Flask(__name__)
     app.config["proxy"] = config or Config()
+
+    # the insecure request warning would be emitted on every upstream call;
+    # skipping verification is an explicit opt-in, so silence it
+    if not app.config["proxy"].ssl_verify:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    @app.after_request
+    def log_request(response: Response) -> Response:
+        if request.path != "/healthz":
+            logger.info(
+                '%s "%s %s" %s',
+                request.remote_addr,
+                request.method,
+                request.full_path if request.query_string else request.path,
+                response.status_code,
+            )
+        return response
 
     @app.route("/")
     def index() -> Response:
@@ -190,9 +208,11 @@ def create_app(config: Config | None = None) -> Flask:
         digest_match = DIGEST_PATTERN.match(ref)
         version_match = VERSION_PATTERN.match(ref)
 
+        name = None
         if digest_match:
             digest = digest_match.group("digest")
         elif version_match:
+            name = f"release-image-{ref}"
             arch = request.args.get("arch", "amd64")
             channel_prefix = request.args.get("channel_prefix", "stable")
 
@@ -228,7 +248,9 @@ def create_app(config: Config | None = None) -> Flask:
         if not signatures:
             return Response("no signatures found for digest\n", status=404, mimetype="text/plain")
 
-        return Response(_render_configmap(digest, signatures), mimetype="application/yaml")
+        return Response(
+            _render_configmap(digest, signatures, name=name), mimetype="application/yaml"
+        )
 
     return app
 
@@ -290,10 +312,13 @@ def _fetch_signatures(cfg: Config, digest: str, limit: int = 10) -> list[bytes]:
     return signatures
 
 
-def _render_configmap(digest: str, signatures: list[bytes]) -> str:
+def _render_configmap(digest: str, signatures: list[bytes], name: str | None = None) -> str:
     binary_data = "\n".join(
         f"  sha256-{digest}-{index}: {base64.b64encode(signature).decode('ascii')}"
         for index, signature in enumerate(signatures, start=1)
     )
 
-    return CONFIGMAP_TEMPLATE.format(short_digest=digest[:16], binary_data=binary_data)
+    return CONFIGMAP_TEMPLATE.format(
+        name=name or f"signature-sha256-{digest[:16]}",
+        binary_data=binary_data,
+    )
