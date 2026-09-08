@@ -7,7 +7,7 @@ import re
 import requests
 from flask import Flask, Response, jsonify, request
 
-from openshift_update_proxy import __version__, catalog
+from openshift_update_proxy import __version__, catalog, lifecycle
 from openshift_update_proxy.config import Config
 
 logger = logging.getLogger("openshift-update-proxy")
@@ -57,6 +57,8 @@ def create_app(config: Config | None = None) -> Flask:
                     "/configmaps/",
                     "/catalog/",
                     "/operators/",
+                    "/lifecycle/",
+                    "/versions/",
                     "/healthz",
                 ],
             }
@@ -86,6 +88,35 @@ def create_app(config: Config | None = None) -> Flask:
         cfg = app.config["proxy"]
         return _forward(cfg, f"{cfg.catalog_upstream}/{path}", params=request.args)
 
+    @app.route("/lifecycle/<path:path>")
+    def lifecycle_proxy(path: str) -> Response:
+        cfg = app.config["proxy"]
+        return _forward(cfg, f"{cfg.lifecycle_upstream}/{path}", params=request.args)
+
+    @app.route("/versions/v1/supported")
+    def supported_versions() -> Response:
+        cfg = app.config["proxy"]
+
+        channel_prefix = request.args.get("channel_prefix", "stable")
+        arch = request.args.get("arch", "amd64")
+
+        error = _validate_identifiers(channel_prefix, arch)
+        if error:
+            return error
+
+        try:
+            versions = lifecycle.build_supported(cfg, channel_prefix, arch)
+        except requests.RequestException as exc:
+            return _upstream_error(exc)
+
+        return jsonify(
+            {
+                "product": lifecycle.PRODUCT_NAME,
+                "architecture": arch,
+                "versions": versions,
+            }
+        )
+
     @app.route("/operators/v1/<organization>/<package>/channels")
     def operator_channels(organization: str, package: str) -> Response:
         cfg = app.config["proxy"]
@@ -103,7 +134,7 @@ def create_app(config: Config | None = None) -> Flask:
                 latest_only=True,
             )
         except requests.RequestException as exc:
-            return _catalog_error(exc)
+            return _upstream_error(exc)
 
         if not bundles:
             return Response(
@@ -139,7 +170,7 @@ def create_app(config: Config | None = None) -> Flask:
                 ocp_version=request.args.get("ocp_version"),
             )
         except requests.RequestException as exc:
-            return _catalog_error(exc)
+            return _upstream_error(exc)
 
         if not bundles:
             return Response(
@@ -190,10 +221,10 @@ def _validate_identifiers(*values: str) -> Response | None:
     return None
 
 
-def _catalog_error(exc: requests.RequestException) -> Response:
-    logger.warning("upstream catalog request failed: %s", exc)
+def _upstream_error(exc: requests.RequestException) -> Response:
+    logger.warning("upstream request failed: %s", exc)
     return Response(
-        "upstream catalog request failed\n",
+        "upstream request failed\n",
         status=502,
         mimetype="text/plain",
     )

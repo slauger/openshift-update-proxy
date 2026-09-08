@@ -2,10 +2,11 @@
 
 import logging
 import re
-import time
+from typing import cast
 
 import requests
 
+from openshift_update_proxy import cache
 from openshift_update_proxy.config import Config
 
 logger = logging.getLogger("openshift-update-proxy")
@@ -52,9 +53,9 @@ def fetch_bundles(
         filters.append("latest_in_channel==true")
 
     cache_key = ";".join(filters)
-    cached = _cache_get(cfg, cache_key)
+    cached = cache.get(cfg, cache_key)
     if cached is not None:
-        return cached
+        return cast(list[dict], cached)
 
     bundles: list[dict] = []
     page = 0
@@ -83,7 +84,7 @@ def fetch_bundles(
         if not data or len(bundles) >= total:
             break
 
-    _cache_set(cfg, cache_key, bundles)
+    cache.put(cfg, cache_key, bundles, cfg.catalog_cache_ttl)
     return bundles
 
 
@@ -144,15 +145,3 @@ def version_key(version: str) -> tuple:
         for part in re.split(r"[.+-]", version)
         if part
     )
-
-
-def _cache_get(cfg: Config, key: str) -> list[dict] | None:
-    entry = cfg.catalog_cache.get(key)
-    if entry and entry[0] > time.monotonic():
-        return entry[1]
-    return None
-
-
-def _cache_set(cfg: Config, key: str, value: list[dict]) -> None:
-    if cfg.catalog_cache_ttl > 0:
-        cfg.catalog_cache[key] = (time.monotonic() + cfg.catalog_cache_ttl, value)

@@ -6,9 +6,9 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 A small Flask based service which forwards HTTP requests to `api.openshift.com`,
-`mirror.openshift.com` and `catalog.redhat.com`. Built for restricted networks where
-OpenShift clusters have no direct internet access, but a central egress proxy (or a
-single host with internet access) exists.
+`mirror.openshift.com`, `catalog.redhat.com` and `access.redhat.com`. Built for
+restricted networks where OpenShift clusters have no direct internet access, but a
+central egress proxy (or a single host with internet access) exists.
 
 ## Features
 
@@ -23,6 +23,8 @@ single host with internet access) exists.
 - 🎛️ **Operator Catalog API** - serves operator channels and versions from the
   Red Hat Pyxis API (`catalog.redhat.com`), ready to use as a
   [Renovate custom datasource](https://docs.renovatebot.com/modules/datasource/custom/)
+- 📅 **Supported Versions API** - combines the Red Hat product lifecycle API with the
+  update graph to list supported OpenShift minor versions and their latest release
 - 🚦 **Egress Proxy Aware** - honors `HTTPS_PROXY` / `NO_PROXY` for all upstream requests
 - 🐳 **Hardened Container** - UBI9 based, rootless (UID 1001), digest-pinned base image,
   Cosign signed
@@ -44,6 +46,7 @@ flowchart LR
         API["api.openshift.com"]
         MIRROR["mirror.openshift.com"]
         PYXIS["catalog.redhat.com"]
+        LIFECYCLE["access.redhat.com"]
     end
 
     CVO -- "/api/upgrades_info/v1/graph" --> PROXY
@@ -56,6 +59,7 @@ flowchart LR
     EGRESS --> API
     EGRESS --> MIRROR
     EGRESS --> PYXIS
+    EGRESS --> LIFECYCLE
 ```
 
 ## Endpoints
@@ -69,6 +73,8 @@ flowchart LR
 | `/catalog/<path>` | `https://catalog.redhat.com/api/containers/v1/` | Red Hat Pyxis API (operator catalog metadata) |
 | `/operators/v1/<catalog>/<package>/channels` | derived from Pyxis | Channels, default channel and latest CSV per channel |
 | `/operators/v1/<catalog>/<package>/<channel>/releases` | derived from Pyxis | Version feed in Renovate custom datasource format |
+| `/lifecycle/<path>` | `https://access.redhat.com/product-life-cycles/api/v1/` | Red Hat product lifecycle API |
+| `/versions/v1/supported` | derived from lifecycle API + update graph | Supported OpenShift minors with latest release per channel |
 | `/healthz` | - | Health check for liveness/readiness probes |
 
 ## Configuration
@@ -84,6 +90,8 @@ All configuration is done via environment variables:
 | `SIGNATURE_UPSTREAM` | `https://mirror.openshift.com/pub/openshift-v4/signatures/openshift/release/` | Signature store base URL |
 | `CATALOG_UPSTREAM` | `https://catalog.redhat.com/api/containers/v1/` | Red Hat Pyxis API base URL |
 | `CATALOG_CACHE_TTL` | `600` | Cache TTL in seconds for operator catalog lookups (`0` disables caching) |
+| `LIFECYCLE_UPSTREAM` | `https://access.redhat.com/product-life-cycles/api/v1/` | Red Hat product lifecycle API base URL |
+| `LIFECYCLE_CACHE_TTL` | `3600` | Cache TTL in seconds for lifecycle and latest-release lookups (`0` disables caching) |
 | `REQUEST_TIMEOUT` | `30` | Upstream request timeout in seconds |
 | `LISTEN_HOST` | `0.0.0.0` | Listen address |
 | `LISTEN_PORT` | `5000` | Listen port |
@@ -210,6 +218,39 @@ policies) just like any other dependency - merging the PR rolls out the operator
 update. See [examples/renovate/](examples/renovate/) for a complete working setup:
 a `renovate.json` with the custom datasource and regex manager, plus matching
 Subscription and ACM Policy manifests.
+
+## Supported OpenShift versions
+
+`/versions/v1/supported` combines the
+[Red Hat product lifecycle API](https://access.redhat.com/product-life-cycles) with
+the Cincinnati update graph: all OpenShift minor versions that are not end-of-life,
+together with the latest release in the corresponding update channel.
+
+```bash
+curl -s "http://update-proxy.example.com:5000/versions/v1/supported"
+```
+
+```json
+{
+  "product": "OpenShift Container Platform",
+  "architecture": "amd64",
+  "versions": [
+    {"version": "4.22", "support_phase": "Full Support", "channel": "stable-4.22", "latest_release": "4.22.11"},
+    {"version": "4.20", "support_phase": "Maintenance Support", "channel": "stable-4.20", "latest_release": "4.20.35"}
+  ]
+}
+```
+
+The optional `channel_prefix` (default `stable`, e.g. `eus`, `fast`, `candidate`) and
+`arch` (default `amd64`) query parameters select the channel and architecture;
+`latest_release` is `null` when the channel has no published releases yet. The raw
+lifecycle API is available under `/lifecycle/`, e.g.
+`/lifecycle/products?name=OpenShift Container Platform`.
+
+Together with the `/configmaps/` endpoint this replaces homegrown signature sync
+scripts: [examples/create-configmaps.sh](examples/create-configmaps.sh) fetches all
+release signatures for a set of channels through the proxy and applies them as
+ConfigMaps.
 
 ## Local Development
 
