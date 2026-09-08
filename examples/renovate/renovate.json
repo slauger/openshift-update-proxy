@@ -1,0 +1,29 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "customDatasources": {
+    "openshift-operators": {
+      "format": "json"
+    }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update startingCSV in OLM Subscriptions (plain manifests and ACM policies)",
+      "managerFilePatterns": ["/\\.ya?ml$/"],
+      "matchStrings": [
+        "channel:\\s*(?<currentChannel>[A-Za-z0-9.-]+)[\\s\\S]*?name:\\s*(?<packageName>[a-z0-9-]+)[\\s\\S]*?source:\\s*(?<catalogSource>[a-z0-9-]+)[\\s\\S]*?startingCSV:\\s*[a-z0-9-]+\\.v(?<currentValue>[0-9][A-Za-z0-9.+-]*)"
+      ],
+      "depNameTemplate": "{{packageName}}",
+      "datasourceTemplate": "custom.openshift-operators",
+      "versioningTemplate": "semver",
+      "registryUrlTemplate": "http://update-proxy.example.com:5000/operators/v1/{{catalogSource}}/{{packageName}}/{{currentChannel}}/releases"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Patched builds (1.2.3+0.<timestamp>.p) encode the suffix differently in the CSV name - only bump to plain releases",
+      "matchDatasources": ["custom.openshift-operators"],
+      "allowedVersions": "/^\\d+\\.\\d+\\.\\d+$/"
+    }
+  ]
+}

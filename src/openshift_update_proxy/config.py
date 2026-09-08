@@ -17,6 +17,11 @@ class Config:
             "SIGNATURE_UPSTREAM",
             "https://mirror.openshift.com/pub/openshift-v4/signatures/openshift/release/",
         ).rstrip("/")
+        self.catalog_upstream = os.environ.get(
+            "CATALOG_UPSTREAM", "https://catalog.redhat.com/api/containers/v1/"
+        ).rstrip("/")
+        self.catalog_cache_ttl = float(os.environ.get("CATALOG_CACHE_TTL", "600"))
+        self.catalog_cache: dict[str, tuple[float, list[dict]]] = {}
         self.ssl_verify = os.environ.get("INSECURE_SKIP_TLS_VERIFY", "").lower() not in TRUTHY
         self.request_timeout = float(os.environ.get("REQUEST_TIMEOUT", "30"))
         self.listen_host = os.environ.get("LISTEN_HOST", "0.0.0.0")
