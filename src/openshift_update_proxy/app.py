@@ -7,7 +7,7 @@ import re
 import requests
 from flask import Flask, Response, jsonify, request
 
-from openshift_update_proxy import __version__, catalog, lifecycle
+from openshift_update_proxy import __version__, catalog, graph, lifecycle
 from openshift_update_proxy.config import Config
 
 logger = logging.getLogger("openshift-update-proxy")
@@ -28,6 +28,8 @@ EXCLUDED_HEADERS = {
 }
 
 DIGEST_PATTERN = re.compile(r"^(sha256[:=])?(?P<digest>[0-9a-f]{64})$")
+
+VERSION_PATTERN = re.compile(r"^(?P<major>\d+)\.(?P<minor>\d+)\.\d+[A-Za-z0-9.+-]*$")
 
 CONFIGMAP_TEMPLATE = """apiVersion: v1
 kind: ConfigMap
@@ -181,26 +183,52 @@ def create_app(config: Config | None = None) -> Flask:
 
         return jsonify({"releases": catalog.build_releases(bundles)})
 
-    @app.route("/configmaps/<digest>")
-    def signature_configmap(digest: str) -> Response:
+    @app.route("/configmaps/<ref>")
+    def signature_configmap(ref: str) -> Response:
         cfg = app.config["proxy"]
 
-        match = DIGEST_PATTERN.match(digest)
-        if not match:
+        digest_match = DIGEST_PATTERN.match(ref)
+        version_match = VERSION_PATTERN.match(ref)
+
+        if digest_match:
+            digest = digest_match.group("digest")
+        elif version_match:
+            arch = request.args.get("arch", "amd64")
+            channel_prefix = request.args.get("channel_prefix", "stable")
+
+            error = _validate_identifiers(arch, channel_prefix)
+            if error:
+                return error
+
+            channel = (
+                f"{channel_prefix}-{version_match.group('major')}.{version_match.group('minor')}"
+            )
+            try:
+                payloads = graph.fetch_version_payloads(cfg, channel, arch)
+            except requests.RequestException as exc:
+                return _upstream_error(exc)
+
+            found = payloads.get(ref)
+            if not found:
+                return Response(
+                    f"version {ref} not found in channel {channel} ({arch})\n",
+                    status=404,
+                    mimetype="text/plain",
+                )
+            digest = found
+        else:
             return Response(
-                "invalid digest, expected sha256=<64 hex chars>\n",
+                "invalid reference, expected sha256=<64 hex chars> or a release version"
+                " like 4.16.8\n",
                 status=400,
                 mimetype="text/plain",
             )
 
-        signatures = _fetch_signatures(cfg, match.group("digest"))
+        signatures = _fetch_signatures(cfg, digest)
         if not signatures:
             return Response("no signatures found for digest\n", status=404, mimetype="text/plain")
 
-        return Response(
-            _render_configmap(match.group("digest"), signatures),
-            mimetype="application/yaml",
-        )
+        return Response(_render_configmap(digest, signatures), mimetype="application/yaml")
 
     return app
 

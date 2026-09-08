@@ -2,6 +2,7 @@ import requests
 from conftest import FakeResponse
 
 import openshift_update_proxy.app as app_module
+import openshift_update_proxy.graph as graph_module
 import openshift_update_proxy.lifecycle as lifecycle_module
 
 LIFECYCLE_PAYLOAD = {
@@ -20,7 +21,17 @@ LIFECYCLE_PAYLOAD = {
 
 
 def graph_payload(versions):
-    return {"nodes": [{"version": version} for version in versions]}
+    return {
+        "nodes": [
+            {"version": version, "payload": f"quay.io/x/release@sha256:{'0' * 64}"}
+            for version in versions
+        ]
+    }
+
+
+def patch_upstreams(monkeypatch, fake_get):
+    monkeypatch.setattr(lifecycle_module.requests, "get", fake_get)
+    monkeypatch.setattr(graph_module.requests, "get", fake_get)
 
 
 def fake_upstreams(graphs, calls=None):
@@ -57,7 +68,7 @@ def test_supported_versions_filters_and_sorts(client, monkeypatch):
         "stable-4.22": ["4.22.2", "4.22.10", "4.22.9"],
         "stable-4.20": ["4.20.5"],
     }
-    monkeypatch.setattr(lifecycle_module.requests, "get", fake_upstreams(graphs))
+    patch_upstreams(monkeypatch, fake_upstreams(graphs))
 
     response = client.get("/versions/v1/supported")
 
@@ -82,7 +93,7 @@ def test_supported_versions_filters_and_sorts(client, monkeypatch):
 
 def test_supported_versions_reports_empty_channel_as_null(client, monkeypatch):
     graphs = {"stable-4.22": ["4.22.1"]}
-    monkeypatch.setattr(lifecycle_module.requests, "get", fake_upstreams(graphs))
+    patch_upstreams(monkeypatch, fake_upstreams(graphs))
 
     response = client.get("/versions/v1/supported")
 
@@ -93,7 +104,7 @@ def test_supported_versions_reports_empty_channel_as_null(client, monkeypatch):
 
 def test_supported_versions_honors_channel_prefix_and_arch(client, monkeypatch):
     calls = []
-    monkeypatch.setattr(lifecycle_module.requests, "get", fake_upstreams({}, calls))
+    patch_upstreams(monkeypatch, fake_upstreams({}, calls))
 
     response = client.get("/versions/v1/supported?channel_prefix=eus&arch=arm64")
 
@@ -106,7 +117,7 @@ def test_supported_versions_honors_channel_prefix_and_arch(client, monkeypatch):
 def test_supported_versions_uses_cache(client, monkeypatch):
     calls = []
     graphs = {"stable-4.22": ["4.22.1"], "stable-4.20": ["4.20.1"]}
-    monkeypatch.setattr(lifecycle_module.requests, "get", fake_upstreams(graphs, calls))
+    patch_upstreams(monkeypatch, fake_upstreams(graphs, calls))
 
     client.get("/versions/v1/supported")
     client.get("/versions/v1/supported")
@@ -127,7 +138,7 @@ def test_supported_versions_returns_502_on_upstream_error(client, monkeypatch):
     def fake_get(*args, **kwargs):
         raise requests.ConnectionError("upstream down")
 
-    monkeypatch.setattr(lifecycle_module.requests, "get", fake_get)
+    patch_upstreams(monkeypatch, fake_get)
 
     response = client.get("/versions/v1/supported")
 

@@ -4,7 +4,7 @@ import logging
 
 import requests
 
-from openshift_update_proxy import cache
+from openshift_update_proxy import cache, graph
 from openshift_update_proxy.catalog import version_key
 from openshift_update_proxy.config import Config
 
@@ -65,27 +65,7 @@ def fetch_supported_minors(cfg: Config) -> list[dict]:
 
 def fetch_latest_release(cfg: Config, channel: str, arch: str) -> str | None:
     """Return the highest release version in the given update channel, if any."""
-    cache_key = f"graph-latest;{channel};{arch}"
-    cached = cache.get(cfg, cache_key)
-    if cached is not None:
-        return str(cached)
-
-    logger.info("fetching update graph for channel %s (%s)", channel, arch)
-    response = requests.get(
-        f"{cfg.api_upstream}/upgrades_info/v1/graph",
-        params={"channel": channel, "arch": arch},
-        headers={"Accept": "application/json"},
-        verify=cfg.ssl_verify,
-        timeout=cfg.request_timeout,
-    )
-    response.raise_for_status()
-
-    versions: list[str] = [
-        node["version"] for node in response.json().get("nodes", []) if node.get("version")
-    ]
+    versions = list(graph.fetch_version_payloads(cfg, channel, arch))
     if not versions:
         return None
-
-    latest = max(versions, key=version_key)
-    cache.put(cfg, cache_key, latest, cfg.lifecycle_cache_ttl)
-    return latest
+    return max(versions, key=version_key)

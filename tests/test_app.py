@@ -3,6 +3,7 @@ import base64
 from conftest import FakeResponse
 
 import openshift_update_proxy.app as app_module
+import openshift_update_proxy.graph as graph_module
 
 DIGEST = "a" * 64
 
@@ -139,6 +140,67 @@ def test_configmap_accepts_bare_digest(client, monkeypatch):
     response = client.get(f"/configmaps/{DIGEST}")
 
     assert response.status_code == 200
+
+
+def test_configmap_by_version_resolves_digest(client, monkeypatch):
+    graph_calls = {}
+
+    def fake_get(url, params=None, **kwargs):
+        if "upgrades_info" in url:
+            graph_calls["url"] = url
+            graph_calls["params"] = params
+            return FakeResponse(
+                json_data={
+                    "nodes": [
+                        {"version": "4.16.8", "payload": f"quay.io/x/release@sha256:{DIGEST}"},
+                        {"version": "4.16.9", "payload": "quay.io/x/release@sha256:" + "b" * 64},
+                    ]
+                }
+            )
+        if url.endswith(f"sha256={DIGEST}/signature-1"):
+            return FakeResponse(b"sig")
+        return FakeResponse(b"", 404)
+
+    monkeypatch.setattr(app_module.requests, "get", fake_get)
+
+    response = client.get("/configmaps/4.16.8?arch=arm64")
+
+    assert response.status_code == 200
+    assert graph_calls["params"]["channel"] == "stable-4.16"
+    assert graph_calls["params"]["arch"] == "arm64"
+    assert f"sha256-{DIGEST}-1:" in response.data.decode()
+
+
+def test_configmap_by_version_returns_404_for_unknown_version(client, monkeypatch):
+    monkeypatch.setattr(
+        graph_module.requests, "get", lambda *a, **kw: FakeResponse(json_data={"nodes": []})
+    )
+
+    response = client.get("/configmaps/4.16.99")
+
+    assert response.status_code == 404
+    assert b"not found in channel stable-4.16" in response.data
+
+
+def test_configmap_by_version_honors_channel_prefix(client, monkeypatch):
+    captured = {}
+
+    def fake_graph_get(url, params=None, **kwargs):
+        captured["params"] = params
+        return FakeResponse(json_data={"nodes": []})
+
+    monkeypatch.setattr(graph_module.requests, "get", fake_graph_get)
+
+    response = client.get("/configmaps/4.16.8?channel_prefix=eus")
+
+    assert response.status_code == 404
+    assert captured["params"]["channel"] == "eus-4.16"
+
+
+def test_configmap_by_version_rejects_invalid_arch(client):
+    response = client.get("/configmaps/4.16.8?arch=amd64;x==y")
+
+    assert response.status_code == 400
 
 
 def test_ssl_verify_enabled_by_default(config):

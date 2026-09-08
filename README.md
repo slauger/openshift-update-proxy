@@ -69,7 +69,7 @@ flowchart LR
 | `/api/<path>` | `https://api.openshift.com/api/` | Cincinnati update graph (`/api/upgrades_info/v1/graph`) |
 | `/pub/<path>` | `https://mirror.openshift.com/pub/` | OpenShift mirror (clients, release artifacts) |
 | `/signatures/<path>` | `https://mirror.openshift.com/pub/openshift-v4/signatures/openshift/release/` | Release image signature store |
-| `/configmaps/sha256=<digest>` | derived from signature store | Ready-to-apply signature ConfigMap (YAML) |
+| `/configmaps/<version or sha256=digest>` | derived from signature store | Ready-to-apply signature ConfigMap (YAML) |
 | `/catalog/<path>` | `https://catalog.redhat.com/api/containers/v1/` | Red Hat Pyxis API (operator catalog metadata) |
 | `/operators/v1/<catalog>/<package>/channels` | derived from Pyxis | Channels, default channel and latest CSV per channel |
 | `/operators/v1/<catalog>/<package>/<channel>/releases` | derived from Pyxis | Version feed in Renovate custom datasource format |
@@ -148,8 +148,19 @@ spec:
 For updates by digest (`oc adm upgrade --to-image ...@sha256:...`) the CVO must verify the
 release image signature.
 
-The `/configmaps/` endpoint fetches all signatures for a release digest and renders a
-ready-to-apply ConfigMap (same format as `oc adm release mirror` / oc-mirror produces):
+The `/configmaps/` endpoint fetches all signatures for a release and renders a
+ready-to-apply ConfigMap (same format as `oc adm release mirror` / oc-mirror produces).
+It accepts a release version directly - the digest is resolved via the update graph:
+
+```bash
+curl -s "http://update-proxy.example.com:5000/configmaps/4.16.8" | oc apply -f -
+```
+
+The optional `arch` (default `amd64`) and `channel_prefix` (default `stable`) query
+parameters select the architecture and the update channel used for the lookup, e.g.
+`/configmaps/4.16.8?arch=arm64`.
+
+Alternatively, a release digest can be passed directly:
 
 ```bash
 DIGEST=$(oc adm release info quay.io/openshift-release-dev/ocp-release:4.16.8-x86_64 -o jsonpath='{.digest}')
