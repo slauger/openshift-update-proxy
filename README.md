@@ -5,10 +5,10 @@
 [![PyPI](https://img.shields.io/pypi/v/openshift-update-proxy)](https://pypi.org/project/openshift-update-proxy/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-A small Flask based service which forwards HTTP requests to `api.openshift.com` and
-`mirror.openshift.com`. Built for restricted networks where OpenShift clusters have no
-direct internet access, but a central egress proxy (or a single host with internet
-access) exists.
+A small Flask based service which forwards HTTP requests to `api.openshift.com`,
+`mirror.openshift.com` and `catalog.redhat.com`. Built for restricted networks where
+OpenShift clusters have no direct internet access, but a central egress proxy (or a
+single host with internet access) exists.
 
 ## Features
 
@@ -20,6 +20,9 @@ access) exists.
   `ClusterVersion.spec.signatureStores` (OpenShift 4.14+)
 - 🗺️ **ConfigMap Generator** - renders ready-to-apply signature ConfigMaps for the
   classic disconnected verification workflow
+- 🎛️ **Operator Catalog API** - serves operator channels and versions from the
+  Red Hat Pyxis API (`catalog.redhat.com`), ready to use as a
+  [Renovate custom datasource](https://docs.renovatebot.com/modules/datasource/custom/)
 - 🚦 **Egress Proxy Aware** - honors `HTTPS_PROXY` / `NO_PROXY` for all upstream requests
 - 🐳 **Hardened Container** - UBI9 based, rootless (UID 1001), digest-pinned base image,
   Cosign signed
@@ -33,22 +36,26 @@ flowchart LR
     subgraph restricted["Restricted network"]
         CVO["Cluster Version Operator"]
         ADMIN["Admin (oc / curl)"]
+        RENOVATE["Renovate"]
         PROXY["openshift-update-proxy"]
     end
 
     subgraph internet["Internet"]
         API["api.openshift.com"]
         MIRROR["mirror.openshift.com"]
+        PYXIS["catalog.redhat.com"]
     end
 
     CVO -- "/api/upgrades_info/v1/graph" --> PROXY
     CVO -- "/signatures/sha256=…" --> PROXY
     ADMIN -- "/configmaps/sha256=…" --> PROXY
     ADMIN -- "/pub/…" --> PROXY
+    RENOVATE -- "/operators/v1/…" --> PROXY
 
     PROXY -- "optional egress proxy (HTTPS_PROXY)" --> EGRESS["Egress Proxy"]
     EGRESS --> API
     EGRESS --> MIRROR
+    EGRESS --> PYXIS
 ```
 
 ## Endpoints
@@ -59,6 +66,9 @@ flowchart LR
 | `/pub/<path>` | `https://mirror.openshift.com/pub/` | OpenShift mirror (clients, release artifacts) |
 | `/signatures/<path>` | `https://mirror.openshift.com/pub/openshift-v4/signatures/openshift/release/` | Release image signature store |
 | `/configmaps/sha256=<digest>` | derived from signature store | Ready-to-apply signature ConfigMap (YAML) |
+| `/catalog/<path>` | `https://catalog.redhat.com/api/containers/v1/` | Red Hat Pyxis API (operator catalog metadata) |
+| `/operators/v1/<catalog>/<package>/channels` | derived from Pyxis | Channels, default channel and latest CSV per channel |
+| `/operators/v1/<catalog>/<package>/<channel>/releases` | derived from Pyxis | Version feed in Renovate custom datasource format |
 | `/healthz` | - | Health check for liveness/readiness probes |
 
 ## Configuration
@@ -72,6 +82,8 @@ All configuration is done via environment variables:
 | `API_UPSTREAM` | `https://api.openshift.com/api/` | Cincinnati API base URL |
 | `MIRROR_UPSTREAM` | `https://mirror.openshift.com/pub/` | Mirror base URL |
 | `SIGNATURE_UPSTREAM` | `https://mirror.openshift.com/pub/openshift-v4/signatures/openshift/release/` | Signature store base URL |
+| `CATALOG_UPSTREAM` | `https://catalog.redhat.com/api/containers/v1/` | Red Hat Pyxis API base URL |
+| `CATALOG_CACHE_TTL` | `600` | Cache TTL in seconds for operator catalog lookups (`0` disables caching) |
 | `REQUEST_TIMEOUT` | `30` | Upstream request timeout in seconds |
 | `LISTEN_HOST` | `0.0.0.0` | Listen address |
 | `LISTEN_PORT` | `5000` | Listen port |
@@ -143,6 +155,61 @@ The ConfigMap is created in `openshift-config-managed` with the
 > gated behind the TechPreview-only `SignatureStores` feature gate and will not be
 > promoted to GA ([OTA-1118](https://issues.redhat.com/browse/OTA-1118)). The ConfigMap
 > above is the supported way to provide signatures.
+
+## Operator catalog and Renovate
+
+The `/operators/v1/` endpoints answer "which operator versions exist in which
+channel?" without pulling the multi-hundred-MB catalog index images and without any
+registry credentials. The data comes from the public
+[Red Hat Pyxis API](https://catalog.redhat.com/api/containers/docs/) and covers all
+four default catalogs: `redhat-operators`, `certified-operators`,
+`community-operators` and `redhat-marketplace`.
+
+List channels, default channel and the latest CSV per channel:
+
+```bash
+curl -s "http://update-proxy.example.com:5000/operators/v1/redhat-operators/openshift-gitops-operator/channels?ocp_version=4.16"
+```
+
+```json
+{
+  "package": "openshift-gitops-operator",
+  "organization": "redhat-operators",
+  "default_channel": "latest",
+  "channels": [
+    {"name": "gitops-1.21", "latest_version": "1.21.4", "latest_csv": "openshift-gitops-operator.v1.21.4"}
+  ]
+}
+```
+
+List all versions of a channel in the format Renovate expects from a
+[custom datasource](https://docs.renovatebot.com/modules/datasource/custom/):
+
+```bash
+curl -s "http://update-proxy.example.com:5000/operators/v1/redhat-operators/openshift-gitops-operator/gitops-1.21/releases?ocp_version=4.16"
+```
+
+```json
+{
+  "releases": [
+    {"version": "1.21.3", "releaseTimestamp": "2026-08-14T23:45:28.177000+00:00"},
+    {"version": "1.21.4", "releaseTimestamp": "2026-09-03T12:13:37.391000+00:00"}
+  ]
+}
+```
+
+The optional `ocp_version` query parameter limits results to bundles shipped in the
+catalog for that OpenShift minor version. Responses are cached in memory for
+`CATALOG_CACHE_TTL` seconds. The raw Pyxis API is available under `/catalog/`, e.g.
+`/catalog/operators/indices?filter=organization==redhat-operators` lists all index
+image tags with their end-of-life dates.
+
+With this feed, Renovate can bump pinned operator versions (`startingCSV` in OLM
+`Subscription` manifests, whether managed directly via Argo CD or embedded in ACM
+policies) just like any other dependency - merging the PR rolls out the operator
+update. See [examples/renovate/](examples/renovate/) for a complete working setup:
+a `renovate.json` with the custom datasource and regex manager, plus matching
+Subscription and ACM Policy manifests.
 
 ## Local Development
 

@@ -7,7 +7,7 @@ import re
 import requests
 from flask import Flask, Response, jsonify, request
 
-from openshift_update_proxy import __version__
+from openshift_update_proxy import __version__, catalog
 from openshift_update_proxy.config import Config
 
 logger = logging.getLogger("openshift-update-proxy")
@@ -50,7 +50,15 @@ def create_app(config: Config | None = None) -> Flask:
             {
                 "name": "openshift-update-proxy",
                 "version": __version__,
-                "endpoints": ["/api/", "/pub/", "/signatures/", "/configmaps/", "/healthz"],
+                "endpoints": [
+                    "/api/",
+                    "/pub/",
+                    "/signatures/",
+                    "/configmaps/",
+                    "/catalog/",
+                    "/operators/",
+                    "/healthz",
+                ],
             }
         )
 
@@ -72,6 +80,75 @@ def create_app(config: Config | None = None) -> Flask:
     def signature_proxy(path: str) -> Response:
         cfg = app.config["proxy"]
         return _forward(cfg, f"{cfg.signature_upstream}/{path}")
+
+    @app.route("/catalog/<path:path>")
+    def catalog_proxy(path: str) -> Response:
+        cfg = app.config["proxy"]
+        return _forward(cfg, f"{cfg.catalog_upstream}/{path}", params=request.args)
+
+    @app.route("/operators/v1/<organization>/<package>/channels")
+    def operator_channels(organization: str, package: str) -> Response:
+        cfg = app.config["proxy"]
+
+        error = _validate_identifiers(organization, package)
+        if error:
+            return error
+
+        try:
+            bundles = catalog.fetch_bundles(
+                cfg,
+                package,
+                organization,
+                ocp_version=request.args.get("ocp_version"),
+                latest_only=True,
+            )
+        except requests.RequestException as exc:
+            return _catalog_error(exc)
+
+        if not bundles:
+            return Response(
+                "no bundles found for package/organization\n",
+                status=404,
+                mimetype="text/plain",
+            )
+
+        default_channel, channels = catalog.build_channels(bundles)
+        return jsonify(
+            {
+                "package": package,
+                "organization": organization,
+                "default_channel": default_channel,
+                "channels": channels,
+            }
+        )
+
+    @app.route("/operators/v1/<organization>/<package>/<channel>/releases")
+    def operator_releases(organization: str, package: str, channel: str) -> Response:
+        cfg = app.config["proxy"]
+
+        error = _validate_identifiers(organization, package, channel)
+        if error:
+            return error
+
+        try:
+            bundles = catalog.fetch_bundles(
+                cfg,
+                package,
+                organization,
+                channel=channel,
+                ocp_version=request.args.get("ocp_version"),
+            )
+        except requests.RequestException as exc:
+            return _catalog_error(exc)
+
+        if not bundles:
+            return Response(
+                "no bundles found for package/organization/channel\n",
+                status=404,
+                mimetype="text/plain",
+            )
+
+        return jsonify({"releases": catalog.build_releases(bundles)})
 
     @app.route("/configmaps/<digest>")
     def signature_configmap(digest: str) -> Response:
@@ -95,6 +172,31 @@ def create_app(config: Config | None = None) -> Flask:
         )
 
     return app
+
+
+def _validate_identifiers(*values: str) -> Response | None:
+    candidates = list(values)
+    ocp_version = request.args.get("ocp_version")
+    if ocp_version:
+        candidates.append(ocp_version)
+
+    for value in candidates:
+        if not catalog.valid_identifier(value):
+            return Response(
+                f"invalid identifier: {value}\n",
+                status=400,
+                mimetype="text/plain",
+            )
+    return None
+
+
+def _catalog_error(exc: requests.RequestException) -> Response:
+    logger.warning("upstream catalog request failed: %s", exc)
+    return Response(
+        "upstream catalog request failed\n",
+        status=502,
+        mimetype="text/plain",
+    )
 
 
 def _forward(cfg: Config, url: str, params: dict | None = None) -> Response:
