@@ -16,8 +16,8 @@ central egress proxy (or a single host with internet access) exists.
   (`/api/upgrades_info/v1/graph`) to `api.openshift.com`
 - 📦 **Mirror Proxy** - forwards requests for clients and release artifacts to
   `mirror.openshift.com/pub`
-- 🔏 **Signature Store** - serves release image signatures for
-  `ClusterVersion.spec.signatureStores` (OpenShift 4.14+)
+- 🔏 **Signature Store** - forwards release image signature requests to the
+  public signature store on `mirror.openshift.com`
 - 🗺️ **ConfigMap Generator** - renders ready-to-apply signature ConfigMaps for the
   classic disconnected verification workflow
 - 🎛️ **Operator Catalog API** - serves operator channels and versions from the
@@ -30,6 +30,8 @@ central egress proxy (or a single host with internet access) exists.
   Cosign signed
 - ⛵ **Helm Chart** - deploy to Kubernetes/OpenShift with probes and sane security defaults
 - 🩺 **Health Endpoint** - `/healthz` for liveness and readiness probes
+- 🪵 **Request Logging** - logs source, method, path and status for every
+  request (health probes excluded)
 
 ## How it works
 
@@ -128,6 +130,9 @@ pip install openshift-update-proxy
 openshift-update-proxy
 ```
 
+For running as a service on a plain Linux host, see the systemd unit example in
+[examples/update-proxy.service](examples/update-proxy.service).
+
 ## Cluster integration
 
 ### Update graph
@@ -159,8 +164,8 @@ curl -s "http://update-proxy.example.com:5000/configmaps/4.16.8" | oc apply -f -
 The optional `arch` (default `amd64`) and `channel_prefix` (default `stable`) query
 parameters select the architecture and the update channel used for the lookup, e.g.
 `/configmaps/4.16.8?arch=arm64`. Version lookups name the ConfigMap
-`release-image-<version>`; digest lookups use `signature-sha256-<digest>` as the
-version is not known there.
+`release-image-<version>`; digest lookups use `signature-sha256-<digest prefix>`
+(first 16 characters) as the version is not known there.
 
 Alternatively, a release digest can be passed directly:
 

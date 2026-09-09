@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openshift-update-proxy"
 version = "1.3.0"
-description = "Forwarding proxy for OpenShift update resources (Cincinnati API, mirror, release signatures)"
+description = "Forwarding proxy for OpenShift update resources (update graph, mirror, release signatures, operator catalog, lifecycle API)"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.14"
 authors = [
     {name = "Simon Lauger", email = "simon@lauger.de"},
 ]
-keywords = ["openshift", "cincinnati", "update-graph", "proxy", "disconnected", "air-gapped"]
+keywords = ["openshift", "cincinnati", "update-graph", "proxy", "disconnected", "air-gapped", "olm", "renovate"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Web Environment",
