@@ -1,6 +1,6 @@
 apiVersion: v2
 name: openshift-update-proxy
-description: Forwarding proxy for OpenShift update resources (Cincinnati API, mirror, release signatures)
+description: Forwarding proxy for OpenShift update resources (update graph, mirror, release signatures, operator catalog, lifecycle API)
 type: application
 
 # Chart version, incremented on every chart change (SemVer)
