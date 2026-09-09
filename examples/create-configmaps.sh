@@ -1,7 +1,8 @@
 #!/bin/bash
 #
 # Fetch release image signatures for all releases in the configured update
-# channels via openshift-update-proxy and apply them as ConfigMaps.
+# channels via openshift-update-proxy and apply them as ConfigMaps named
+# release-image-<version>.
 #
 # Requirements: curl, jq, oc (only when APPLY=true)
 #
@@ -42,7 +43,7 @@ if [ -z "${CHANNELS:-}" ]; then
   echo "discovered supported channels: ${CHANNELS}"
 fi
 
-fetch_digests() {
+fetch_versions() {
   local channel arch graph
   for channel in ${CHANNELS}; do
     for arch in ${ARCHITECTURES}; do
@@ -52,23 +53,27 @@ fetch_digests() {
         echo "warning: failed to fetch update graph for ${channel}/${arch}" >&2
         continue
       fi
-      jq -r '.nodes[]?.payload | sub(".*:"; "")' <<<"${graph}"
+      jq -r --arg arch "${arch}" \
+        '.nodes[]? | select(.version != null) | "\(.version) \($arch)"' <<<"${graph}"
     done
-  done | sort -u
+  done | sort -uV
 }
 
 bundle=$(mktemp)
 trap 'rm -f "${bundle}"' EXIT
 
+# requesting by version makes the proxy name the ConfigMaps
+# release-image-<version> instead of signature-sha256-<digest prefix>
 count=0
-while read -r digest; do
-  if ! configmap=$(curl -Lsf "${UPDATE_PROXY_URL}/configmaps/sha256=${digest}"); then
-    echo "warning: no signature found for sha256:${digest}, skipping" >&2
+while read -r version arch; do
+  if ! configmap=$(curl -Lsf \
+    "${UPDATE_PROXY_URL}/configmaps/${version}?arch=${arch}&channel_prefix=${CHANNEL_PREFIX}"); then
+    echo "warning: no signature found for ${version} (${arch}), skipping" >&2
     continue
   fi
   printf -- "---\n%s\n" "${configmap}" >>"${bundle}"
   count=$((count + 1))
-done < <(fetch_digests)
+done < <(fetch_versions)
 
 if [ "${count}" -eq 0 ]; then
   echo "error: no signatures fetched - check UPDATE_PROXY_URL and CHANNELS" >&2
