@@ -267,9 +267,12 @@ The optional `channel_prefix` (default `stable`, e.g. `eus`, `fast`, `candidate`
 lifecycle API is available under `/lifecycle/`, e.g.
 `/lifecycle/products?name=OpenShift Container Platform`.
 
-[examples/create-configmaps.sh](examples/create-configmaps.sh) combines this with
-the `/configmaps/` endpoint: it fetches the release signatures for a set of update
-channels through the proxy and applies them as ConfigMaps.
+[examples/create-configmaps/](examples/create-configmaps/) combines this with the
+`/configmaps/` endpoint: it fetches the release signatures for a set of update
+channels through the proxy and writes one manifest per release
+(`manifests/release-signature-<version>-<arch>.yaml`), ready to be committed to a GitOps
+repository. The directory also contains a scheduled GitHub Actions workflow that
+keeps the manifests up to date.
 
 ## Local Development
 

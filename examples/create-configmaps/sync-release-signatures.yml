@@ -1,0 +1,62 @@
+# GitHub Actions workflow for the GitOps repository (not for this repository).
+#
+# Runs create-configmaps.sh on a schedule, writes one ConfigMap manifest per
+# OpenShift release to manifests/ and commits only the new files, so every run
+# produces a readable diff instead of one large bundle.
+#
+# Requirements:
+#   - the runner can reach the openshift-update-proxy (self-hosted runner in the
+#     restricted network, or a proxy reachable from GitHub-hosted runners)
+#   - repository setting "Workflow permissions: Read and write permissions",
+#     or a PAT/GitHub App token in place of GITHUB_TOKEN
+name: Sync release signatures
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-release-signatures
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Generate signature ConfigMaps
+    runs-on: ubuntu-latest
+    env:
+      UPDATE_PROXY_URL: ${{ vars.UPDATE_PROXY_URL }}
+      CHANNEL_PREFIX: stable
+      ARCHITECTURES: amd64
+      OUTPUT_DIR: manifests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the generator script
+        run: |
+          curl -Lsfo create-configmaps.sh \
+            https://raw.githubusercontent.com/slauger/openshift-update-proxy/master/examples/create-configmaps/create-configmaps.sh
+          chmod +x create-configmaps.sh
+
+      - name: Generate manifests
+        run: ./create-configmaps.sh
+
+      - name: Commit new manifests
+        run: |
+          if [ -z "$(git status --porcelain "${OUTPUT_DIR}")" ]; then
+            echo "no new releases"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${OUTPUT_DIR}"
+
+          # one line per added release keeps the history readable
+          versions=$(git diff --cached --name-only --diff-filter=A "${OUTPUT_DIR}" \
+            | sed -e 's#.*/release-signature-##' -e 's#\.yaml$##' | sort -uV | tr '\n' ' ')
+          git commit -m "chore(signatures): add release signatures for ${versions% }"
+          git push
