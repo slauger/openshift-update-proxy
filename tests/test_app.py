@@ -169,7 +169,7 @@ def test_configmap_by_version_resolves_digest(client, monkeypatch):
     assert graph_calls["params"]["channel"] == "stable-4.16"
     assert graph_calls["params"]["arch"] == "arm64"
     body = response.data.decode()
-    assert "name: release-image-4.16.8" in body
+    assert "name: release-signature-4.16.8-arm64" in body
     assert f"sha256-{DIGEST}-1:" in body
 
 
