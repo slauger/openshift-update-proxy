@@ -212,13 +212,16 @@ def create_app(config: Config | None = None) -> Flask:
         if digest_match:
             digest = digest_match.group("digest")
         elif version_match:
-            name = f"release-image-{ref}"
             arch = request.args.get("arch", "amd64")
             channel_prefix = request.args.get("channel_prefix", "stable")
 
             error = _validate_identifiers(arch, channel_prefix)
             if error:
                 return error
+
+            # the signed digest differs per architecture, so the name has to
+            # carry it - the version alone would collide across architectures
+            name = f"release-signature-{ref}-{arch}"
 
             channel = (
                 f"{channel_prefix}-{version_match.group('major')}.{version_match.group('minor')}"

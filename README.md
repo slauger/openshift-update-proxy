@@ -164,8 +164,10 @@ curl -s "http://update-proxy.example.com:5000/configmaps/4.16.8" | oc apply -f -
 The optional `arch` (default `amd64`) and `channel_prefix` (default `stable`) query
 parameters select the architecture and the update channel used for the lookup, e.g.
 `/configmaps/4.16.8?arch=arm64`. Version lookups name the ConfigMap
-`release-image-<version>`; digest lookups use `signature-sha256-<digest prefix>`
-(first 16 characters) as the version is not known there.
+`release-signature-<version>-<arch>` - the signed digest differs per
+architecture, so the name has to carry it. Digest lookups use
+`signature-sha256-<digest prefix>` (first 16 characters) as neither version nor
+architecture are known there.
 
 Alternatively, a release digest can be passed directly:
 
@@ -265,9 +267,12 @@ The optional `channel_prefix` (default `stable`, e.g. `eus`, `fast`, `candidate`
 lifecycle API is available under `/lifecycle/`, e.g.
 `/lifecycle/products?name=OpenShift Container Platform`.
 
-[examples/create-configmaps.sh](examples/create-configmaps.sh) combines this with
-the `/configmaps/` endpoint: it fetches the release signatures for a set of update
-channels through the proxy and applies them as ConfigMaps.
+[examples/create-configmaps/](examples/create-configmaps/) combines this with the
+`/configmaps/` endpoint: it fetches the release signatures for a set of update
+channels through the proxy and writes one manifest per release
+(`manifests/release-signature-<version>-<arch>.yaml`), ready to be committed to a GitOps
+repository. The directory also contains a scheduled GitHub Actions workflow that
+keeps the manifests up to date.
 
 ## Local Development
 
