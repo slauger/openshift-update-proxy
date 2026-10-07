@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openshift-update-proxy"
-version = "1.4.2"
+version = "1.4.3"
 description = "Forwarding proxy for OpenShift update resources (update graph, mirror, release signatures, operator catalog, lifecycle API)"
 readme = "README.md"
 license = "Apache-2.0"
