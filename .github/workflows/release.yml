@@ -153,7 +153,7 @@ jobs:
       - name: Push chart
         run: helm push openshift-update-proxy-${{ needs.release.outputs.version }}.tgz oci://ghcr.io/slauger/charts
 
-      - uses: oras-project/setup-oras@v1
+      - uses: oras-project/setup-oras@v2
 
       - name: Tag chart as latest
         run: |
