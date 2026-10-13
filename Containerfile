@@ -7,7 +7,7 @@ COPY --chown=1001:0 src/ src/
 
 RUN pip wheel --no-cache-dir --wheel-dir /build/wheels .
 
-FROM registry.access.redhat.com/ubi9/python-314-minimal:latest@sha256:7aab7db21e17ec20e324ea58354f37b0561e61e2132991cee0d14840ce7c25d3
+FROM registry.access.redhat.com/ubi9/python-314-minimal:latest@sha256:f8d1127818aacc4729eb2f1e0a55924ace6708825e84efe11a2bbd62c28361ec
 
 LABEL org.opencontainers.image.source="https://github.com/slauger/openshift-update-proxy" \
       org.opencontainers.image.description="Forwarding proxy for OpenShift update resources (Cincinnati API, mirror, release signatures)" \
