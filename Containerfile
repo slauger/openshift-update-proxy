@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/python-314:latest@sha256:14b7b7245ed127d7b1cef888b2f90e3d0f91638566c2656765d82646ec9bb30c AS builder
+FROM registry.access.redhat.com/ubi9/python-314:latest@sha256:840cb26cf8d90055a9d7811953773d7a4204ce9fb82ef34a0775a1bb26a3a892 AS builder
 
 WORKDIR /build
 
