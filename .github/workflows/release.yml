@@ -169,12 +169,18 @@ jobs:
       contents: read
       packages: write
       id-token: write
+    env:
+      IMAGE: ghcr.io/slauger/openshift-update-proxy
+      PLATFORMS: linux/amd64
     steps:
       - uses: actions/checkout@v7
         with:
           ref: v${{ needs.release.outputs.version }}
 
       - uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@v0.24.3
 
       - uses: docker/setup-buildx-action@v4
 
@@ -191,10 +197,83 @@ jobs:
         with:
           context: .
           file: Containerfile
+          platforms: ${{ env.PLATFORMS }}
           push: true
+          sbom: true
+          # mode=max is what build-push-action already picks for public repos
+          provenance: mode=max
           tags: |
-            ghcr.io/slauger/openshift-update-proxy:v${{ needs.release.outputs.version }}
-            ghcr.io/slauger/openshift-update-proxy:latest
+            ${{ env.IMAGE }}:v${{ needs.release.outputs.version }}
+            ${{ env.IMAGE }}:latest
 
       - name: Sign container image (keyless)
-        run: cosign sign --yes ghcr.io/slauger/openshift-update-proxy@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+
+      # BuildKit attaches an SPDX SBOM to the image, but unsigned and
+      # unreadable for CycloneDX-only consumers such as Dependency-Track.
+      # syft generates both formats from the pushed platform images; they
+      # are also published as release assets.
+      - name: Generate SBOMs
+        env:
+          # Packages only: without this, every file owned by an RPM becomes a CycloneDX component
+          SYFT_FILE_METADATA_SELECTION: none
+          INDEX_DIGEST: ${{ steps.build.outputs.digest }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          # The index also lists BuildKit attestation manifests (unknown/unknown),
+          # so pick the image manifest by platform.
+          INDEX=$(docker buildx imagetools inspect "${IMAGE}@${INDEX_DIGEST}" --format '{{json .Manifest}}')
+
+          mkdir -p sbom
+          for PLATFORM in ${PLATFORMS//,/ }; do
+            DIGEST=$(jq -r --arg os "${PLATFORM%%/*}" --arg arch "${PLATFORM#*/}" \
+              '.manifests[] | select(.platform.os == $os and .platform.architecture == $arch) | .digest' <<< "${INDEX}")
+            if [[ -z "${DIGEST}" ]]; then
+              echo "::error::no ${PLATFORM} image in ${IMAGE}@${INDEX_DIGEST}"
+              exit 1
+            fi
+            BASE="sbom/openshift-update-proxy-${VERSION}-${PLATFORM//\//-}"
+            syft scan "registry:${IMAGE}@${DIGEST}" \
+              --source-name "${IMAGE}" --source-version "v${VERSION}" \
+              -o "cyclonedx-json=${BASE}.cdx.json" \
+              -o "spdx-json=${BASE}.spdx.json"
+            echo "${DIGEST}" > "${BASE}.digest"
+          done
+
+      # An SBOM describes one platform image, so it is attested against the
+      # platform digest rather than the index. :latest points at the same
+      # platform image, so the attestation covers it as well.
+      - name: Attest CycloneDX SBOMs with cosign (keyless)
+        run: |
+          for CDX in sbom/*.cdx.json; do
+            DIGEST=$(cat "${CDX%.cdx.json}.digest")
+            cosign attest --yes --type cyclonedx --predicate "${CDX}" "${IMAGE}@${DIGEST}"
+          done
+
+      - name: Upload SBOMs
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom-openshift-update-proxy
+          path: sbom/*.json
+          retention-days: 7
+
+  release-assets:
+    name: Attach SBOMs to GitHub Release
+    runs-on: ubuntu-latest
+    needs: [release, container]
+    if: needs.release.outputs.released == 'true'
+    permissions:
+      contents: write
+    steps:
+      - name: Download SBOM artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: sbom-*
+          path: sbom
+          merge-multiple: true
+
+      - name: Upload SBOMs to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "v${{ needs.release.outputs.version }}" sbom/*.json

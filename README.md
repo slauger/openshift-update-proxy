@@ -27,7 +27,7 @@ central egress proxy (or a single host with internet access) exists.
   update graph to list supported OpenShift minor versions and their latest release
 - 🚦 **Egress Proxy Aware** - honors `HTTPS_PROXY` / `NO_PROXY` for all upstream requests
 - 🐳 **Hardened Container** - UBI9 based, rootless (UID 1001), digest-pinned base image,
-  Cosign signed
+  Cosign signed, CycloneDX/SPDX SBOMs
 - ⛵ **Helm Chart** - deploy to Kubernetes/OpenShift with probes and sane security defaults
 - 🩺 **Health Endpoint** - `/healthz` for liveness and readiness probes
 - 🪵 **Request Logging** - logs source, method, path and status for every
@@ -314,6 +314,30 @@ cosign verify \
   --certificate-identity-regexp 'https://github.com/slauger/openshift-update-proxy/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/slauger/openshift-update-proxy:latest
+```
+
+- Released images carry SBOMs: the unsigned SPDX SBOM and SLSA provenance that BuildKit
+  attaches to the image, and a CycloneDX SBOM generated with
+  [syft](https://github.com/anchore/syft) and attached as a signed cosign attestation, e.g.
+  for [Dependency-Track](https://dependencytrack.org/). An SBOM describes a single
+  architecture, so the attestation is attached to the platform image rather than the tag.
+  `cosign verify-attestation` has no `--platform` flag; resolve the platform digest first:
+
+```bash
+DIGEST=$(crane digest --platform linux/amd64 ghcr.io/slauger/openshift-update-proxy:latest)
+cosign verify-attestation "ghcr.io/slauger/openshift-update-proxy@${DIGEST}" \
+  --type cyclonedx \
+  --certificate-identity-regexp 'https://github.com/slauger/openshift-update-proxy/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  | jq -r '.payload' | base64 -d | jq '.predicate' > sbom.cdx.json
+```
+
+- Every [GitHub release](https://github.com/slauger/openshift-update-proxy/releases) also
+  carries the image SBOMs as assets:
+
+```text
+openshift-update-proxy-<version>-linux-amd64.cdx.json    # CycloneDX
+openshift-update-proxy-<version>-linux-amd64.spdx.json   # SPDX
 ```
 
 ## License
